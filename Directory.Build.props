@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!-- See https://aka.ms/dotnet/msbuild/customize for more details on customizing your build -->
+
+	<ItemGroup>
+
+		<PackageReference Include="StyleCop.Analyzers.Unstable" Version="1.2.0.406">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="System.Private.ServiceModel" Version="4.7.0" />
+	</ItemGroup>
+
+	<PropertyGroup>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<TargetFramework>net8.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<CodeAnalysisRuleSet>..\..\stylecop.ruleset</CodeAnalysisRuleSet>
+	</PropertyGroup>
+</Project>

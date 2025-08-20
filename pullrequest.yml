@@ -1,0 +1,74 @@
+# Pipeline for pull request validation
+name: "IngoX.Client.Bff-QA PR"
+trigger: none
+
+variables: 
+- name: NuGetConfPath
+  value: "$(Build.SourcesDirectory)/$(ProjectName)/nuget.config"
+- name: DotNetSlnProject
+  value: "$(Build.SourcesDirectory)/$(ProjectName)/IngoX.Client.Bff.sln"
+- name: BuildConfiguration
+  value: "Release"  
+- name: DotNetBuilArguments
+  value: '-c $(BuildConfiguration) --no-restore'
+- name: DotNetTestArguments
+  value: '-c $(BuildConfiguration) --logger:"trx" --collect "XPlat Code Coverage" --no-restore --no-build --filter Category=Unit'
+- name: ProjectName
+  value: 'IngoX.Client.Bff'
+- name: ConfigReposName
+  value: 'Pipelines.Ingos.Services'
+  
+resources:
+  repositories:
+    - repository: configs
+      type: git
+      name: Ingos.Services/Pipelines.Ingos.Services  
+
+jobs:
+  - job: "ValidateCode"
+    displayName: "Validate Code"
+    pool: "win-x64"
+    workspace:
+      clean: all
+    timeoutInMinutes: 15
+    cancelTimeoutInMinutes: 1
+    steps:
+
+    - checkout: self
+      clean: all
+    - checkout: configs
+      clean: all
+    
+    - task: CmdLine@2
+      inputs:
+        script: |
+          move $(Build.SourcesDirectory)\$(ConfigReposName)\stylecop.ruleset $(Build.SourcesDirectory)\$(ProjectName)
+          
+    - task: DotNetCoreCLI@2
+      displayName: "dotnet restore"
+      inputs:
+        command: "restore"
+        projects: "**/*.csproj"
+        feedsToUse: "config"
+        nugetConfigPath: $(NuGetConfPath)
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet build'
+      inputs:
+        projects: $(DotNetSlnProject)
+        arguments: $(DotNetBuilArguments)
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet test'
+      inputs:
+        command: 'test'
+        projects: '$(Build.SourcesDirectory)/$(ProjectName)/tests/**/*.csproj'
+        arguments: $(DotNetTestArguments)
+        testRunTitle: $(Build.DefinitionName)
+        publishTestResults: false
+
+    - task: PublishCodeCoverageResults@1
+      displayName: 'Publish code coverage'
+      inputs:
+        codeCoverageTool: Cobertura
+        summaryFileLocation: $(Agent.TempDirectory)/*/coverage.cobertura.xml

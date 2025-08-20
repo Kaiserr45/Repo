@@ -1,0 +1,4 @@
+{
+  "$schema": "https://artifactory.corp.ingos.ru:443/img-docker-local/renovate-ingos/renovate-schema.json",
+  "extends": ["local>Ingogate/renovate"]
+}

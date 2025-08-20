@@ -1,0 +1,60 @@
+# Starter K8s build pipeline
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+  - master
+  - cicd 
+
+name: "Build Dockerimage"
+
+variables:
+  - name: "ArtifactoryProjectRepository" # your Artifactory virtual repository name
+    value: "ingox-docker-local"
+  - name: "ServiceName"
+    value: "ingos-ingox-client-bff"
+  - name: "ImageName"
+    value: "$(ArtifactoryProjectRepository).artifactory.corp.ingos.ru/$(ServiceName)"
+  - name: "ChartOverridesDirectory"
+    value: "$(Build.SourcesDirectory)/build/helm/overrides"
+  - name: "ChartPath"
+    value: "$(Build.SourcesDirectory)/build/helm/ingos-ingox-client-bff"
+  - name: "DockefilePath"
+    value: "$(Build.SourcesDirectory)"
+
+
+jobs:
+- job: "Build"
+  pool:
+    name: IngoX
+    demands:
+    - for.Build -equals true
+  variables:
+  # Path to a directory containing your app with it's Dockerfile
+  - name: "ProjectFolder"
+    value: "$(Build.SourcesDirectory)"
+  # Trick for artifactory download to work.
+  - name: "NODE_EXTRA_CA_CERTS"
+    value: "$(ca.secureFilePath)"
+
+  workspace:
+    clean: all
+  cancelTimeoutInMinutes: 20
+  dependsOn:
+  steps:
+    - checkout: self
+      clean: all
+
+    - template: /build/azure-pipelines/build-kubernetes-app.yaml
+      parameters:
+        DockefilePath: '$(DockefilePath)'
+        ArtifactoryProjectRepository: '$(ArtifactoryProjectRepository)'
+        ImageName: '$(ImageName)'
+        ChartOverridesDirectory: '$(ChartOverridesDirectory)'
+        
+    - task: Bash@3
+      inputs:
+        targetType: inline
+        script: docker system prune -af
+      displayName: CleanUpAll
+      condition: always()

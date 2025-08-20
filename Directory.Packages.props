@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <!-- Enable central package management, https://learn.microsoft.com/en-us/nuget/consume-packages/Central-Package-Management -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageVersion Include="CSharpGuidelinesAnalyzer" Version="3.8.5" />
+    <PackageVersion Include="FastEndpoints.Swagger" Version="5.34.0" />
+    <PackageVersion Include="Ingos.Platform.Caching.Redis" Version="1.0.0" />
+    <PackageVersion Include="Ingos.Platform.ReCaptcha" Version="6.5.0" />
+    <PackageVersion Include="Ingos.Platform.HealthCheck" Version="6.1.0" />
+    <PackageVersion Include="Ingos.Platform.AisGate" Version="6.9.0" />
+    <PackageVersion Include="Ingos.Platform.Authorization" Version="6.6.0" />
+    <PackageVersion Include="Ingos.Platform.Security.VaultConfig" Version="6.0.0" />
+  </ItemGroup>
+</Project>
