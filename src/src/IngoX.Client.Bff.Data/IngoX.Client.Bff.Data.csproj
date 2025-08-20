@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<ProjectGuid>2a114254-1a89-4a16-9419-0304bc1d4fe9</ProjectGuid>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Remove="bin\**" />
+		<Compile Remove="obj\**" />
+		<EmbeddedResource Remove="bin\**" />
+		<EmbeddedResource Remove="obj\**" />
+		<None Remove="bin\**" />
+		<None Remove="obj\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="Abstract\" />
+		<Folder Include="Maps\" />
+		<Folder Include="Models\" />
+		<Folder Include="Providers\" />
+	</ItemGroup>
+
+</Project>

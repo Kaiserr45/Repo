@@ -1,0 +1,12 @@
+{{- if .Values.podDisruptionBudget.enabled -}}
+# https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "application.fullname" . }}
+spec:
+  minAvailable: {{ include "application.getMinAvaliable" . }}
+  selector:
+    matchLabels:
+      {{- include "application.selectorLabels" . | nindent 6 }}
+  {{- end }}

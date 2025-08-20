@@ -1,0 +1,212 @@
+steps:
+  - script: |
+      #!/bin/bash
+      set -e
+      
+      vsoPrefix="##"
+      vsoWarning="${vsoPrefix}vso[task.logissue type=warning;]"
+      vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+      vsoSection="${vsoPrefix}[section]"
+      failIfTagExists=false
+
+      ## Input
+      # BUILD_BUILDNUMBER                     - TFS default variable, MUST be set in set-build-version.sh. App MUST be the main artifact in the pipeline.
+      # SYSTEM_TEAMFOUNDATIONCOLLECTIONURI
+      # BUILD_SOURCEVERSION
+      # BUILD_REPOSITORY_ID
+      # SYSTEM_ACCESSTOKEN
+      
+      ## Dependencies
+      # set-build-version.sh                  - hard
+
+     
+      #################### INPUT VALIDATION #####################
+      if [ ! "${BUILD_BUILDNUMBER}" ]; then
+          echo "${vsoError}BUILD_BUILDNUMBER IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      fi
+      
+      if [ ! "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}" ]; then
+          echo "${vsoError}SYSTEM_TEAMFOUNDATIONCOLLECTIONURI IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      fi
+      
+      if [ ! "${BUILD_SOURCEVERSION}" ]; then
+          echo "${vsoError}BUILD_SOURCEVERSION IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      fi
+      
+      if [ ! "${BUILD_REPOSITORY_ID}" ]; then
+          echo "${vsoError}BUILD_REPOSITORY_ID IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      fi
+      
+      if [ ! "${SYSTEM_ACCESSTOKEN}" ]; then
+          echo "${vsoError}SYSTEM_ACCESSTOKEN IS NULL! Perhaps you forgot to turn on the appropriate flag in the pipeline?"
+          exit 1
+      fi
+      ###########################################################
+      
+      ####################### TAG SOURCES #######################
+      semVerMMRE="(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+      semVerRE="${semVerMMRE}(\.(0|[1-9][0-9]*))?"
+      
+      version="${BUILD_BUILDNUMBER%%[+-]*}"
+      
+      if [[ "${version}" =~ $semVerRE ]]; then
+          echo "Detected version is SemVer compatible."
+      else
+          echo "Detected version does not match semVer pattern '${semVerRE}'!"
+          exit 1
+      fi
+      
+      newVersionTag="v${version}"
+      
+      getLink="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?filter=tags/${newVersionTag}&api-version=4.1"
+      returnedTags=$(curl \
+          -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+          -H "Accept: application/json" \
+          -H "Content-Type: application/json" \
+          -X GET \
+          ${getLink})
+      returnedTagCount="$(echo ${returnedTags} | grep -Po '"count":.*?[^\\]' | grep -Po '[0-9]+')"
+      
+      if [ ${returnedTagCount} != "0" ]; then
+          if [ $failIfTagExists = true ]; then
+              echo "${vsoError}Tag \"${newVersionTag}\" already exists. Did you accidentally create a release branch with older version?"
+              exit 1
+          fi
+      
+          echo "${vsoWarning}Tag \"${newVersionTag}\" already exists. Hope you know what you are doing."
+          exit 0
+      fi
+      
+      postLink="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?api-version=4.1"
+      body="[
+          {
+              \"name\": \"refs/tags/${newVersionTag}\",
+              \"oldObjectId\": \"0000000000000000000000000000000000000000\",
+              \"newObjectId\": \"${BUILD_SOURCEVERSION}\"
+          }
+      ]"
+      
+      curl \
+          -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+          -H "Accept: application/json" \
+          -H "Content-Type: application/json" \
+          -X POST \
+          -d "${body}" \
+          ${postLink}
+      ###########################################################  
+    displayName: 'Tag code with released verion (linux)'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    condition: and(succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+
+  - script: |
+      #param(
+        $BUILD_BUILDNUMBER                  = $env:BUILD_BUILDNUMBER,
+        $SYSTEM_TEAMFOUNDATIONCOLLECTIONURI = $env:SYSTEM_TEAMFOUNDATIONCOLLECTIONURI,
+        $BUILD_SOURCEVERSION                = $env:BUILD_SOURCEVERSION,
+        $BUILD_REPOSITORY_ID                = $env:BUILD_REPOSITORY_ID,
+        $SYSTEM_ACCESSTOKEN                 = $env:SYSTEM_ACCESSTOKEN,
+
+        #[Switch]
+        #$failIfTagExists
+      #)
+
+      $ErrorActionPreference = "Stop"
+      $vsoPrefix = "##"
+      $vsoWarning = "${vsoPrefix}vso[task.logissue type=warning;]"
+      $vsoError = "${vsoPrefix}vso[task.logissue type=error;]"
+      #$vsoSection="${vsoPrefix}[section]"
+
+      ## Input
+      # BUILD_BUILDNUMBER                     - TFS default variable, MUST be set in set-build-version.sh. App MUST be the main artifact in the pipeline.
+      # SYSTEM_TEAMFOUNDATIONCOLLECTIONURI
+      # BUILD_SOURCEVERSION
+      # BUILD_REPOSITORY_ID
+      # SYSTEM_ACCESSTOKEN
+
+      ## Dependencies
+      # set-build-version.sh                  - hard
+
+      #region ############# INPUT VALIDATION #####################
+      if ( -not "${BUILD_BUILDNUMBER}" ) {
+          Write-Host "${vsoError}BUILD_BUILDNUMBER IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}" ) {
+          Write-Host "${vsoError}SYSTEM_TEAMFOUNDATIONCOLLECTIONURI IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${BUILD_SOURCEVERSION}" ) {
+          Write-Host "${vsoError}BUILD_SOURCEVERSION IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${BUILD_REPOSITORY_ID}" ) {
+          Write-Host "${vsoError}BUILD_REPOSITORY_ID IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${SYSTEM_ACCESSTOKEN}" ) {
+          Write-Host "${vsoError}SYSTEM_ACCESSTOKEN IS NULL! Perhaps you forgot to turn on the appropriate flag in the pipeline?"
+          exit 1
+      }
+      #endregion
+
+      #region ############### TAG SOURCES #######################
+      $semVerMMRE = "(0|([1-9][0-9]*))\.(0|([1-9][0-9]*))"
+      $semVerRE = "${semVerMMRE}(\.(0|([1-9][0-9]*)))?"
+
+      $matched = ${BUILD_BUILDNUMBER} -match $semVerRE
+
+      if (-not $matched) {
+          Write-Host "${vsoError}Version in build number does not match SemVer pattern '$semVerRE'!"
+          exit 1
+      }
+
+      $version = $matches[0]
+      $newVersionTag = "v${version}"
+
+      $headers = @{
+          "Authorization" = "Bearer ${SYSTEM_ACCESSTOKEN}"
+          "Accept"        = "application/json"
+      }
+
+      $getLink = "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?filter=tags/${newVersionTag}&api-version=4.1"
+      $returnedTags = Invoke-Restmethod ${getLink} -Headers $headers -ContentType "application/json" -Method Get
+
+      if ( $returnedTags.count -ne "0" ) {
+          if ( $failIfTagExists ) {
+              Write-Host "${vsoError}Tag '${newVersionTag}' already exists. Did you accidentally create a release branch with older version?"
+              exit 1
+          }
+
+          Write-Host "${vsoWarning}Tag '${newVersionTag}' already exists. Hope you know what you are doing."
+          exit 0  
+      }
+
+      $body = @"
+      [
+          {
+              "name": "refs/tags/${newVersionTag}",
+              "oldObjectId": "0000000000000000000000000000000000000000",
+              "newObjectId": "${BUILD_SOURCEVERSION}"
+          }
+      ]
+      "@
+
+      $postLink = "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?api-version=4.1"
+      Write-Host "POST $postLink"
+
+      Invoke-RestMethod $postLink -Headers $headers -ContentType "application/json" -Method POST -Body $body
+      Write-host "Tag '${newVersionTag}' posted successfully!"
+      #endregion
+    displayName: 'Tag code with released verion  (win)'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))

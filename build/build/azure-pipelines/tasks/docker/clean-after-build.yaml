@@ -1,0 +1,36 @@
+parameters:
+  ImageName: ''
+
+steps:
+  #: 'Удаляет собранный образ и все слои, которые от него остались, чтобы не засорять место на машине'
+  - script: |
+      #!/bin/bash
+
+      set -e
+      vsoPrefix="##"
+      vsoWarning="${vsoPrefix}vso[task.logissue type=warning;]"
+      vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+      vsoSection="${vsoPrefix}[section]"
+      
+      #################### READ PARAMETERS #####################
+      imageName="${{ parameters.ImageName }}"
+      ###########################################################
+      
+      #################### INPUT VALIDATION #####################
+      if [ ! "${imageName}" ]; then
+          echo "${vsoError}imageName IS NULL! No value specified in -im parameter?"
+          exit 1
+      fi
+      
+      if [ ! "${ORG_OPENCONTAINERS_IMAGE_VERSION}" ]; then
+          echo "${vsoError}ORG_OPENCONTAINERS_IMAGE_VERSION IS NULL! Perhaps you did not run buid-init.sh first?"
+          exit 1
+      fi
+      ###########################################################
+      
+      ################### CLEANING THE MESS #####################
+      docker rmi ${IMAGENAME}:${ORG_OPENCONTAINERS_IMAGE_VERSION}
+      docker rmi -f $(docker images -q --filter "dangling=true")
+      ###########################################################
+    displayName: 'Clean up after build'
+    condition: always()

@@ -1,0 +1,422 @@
+parameters:
+  Branch: 'master'
+
+steps:
+  - script: |
+        #!/bin/bash
+        set -e
+
+        vsoPrefix="##"
+        vsoWarning="${vsoPrefix}vso[task.logissue type=warning;]"
+        vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+        vsoSection="${vsoPrefix}[section]"
+
+        mainBranch="origin/${{ parameters.Branch }}"
+        ## Input
+        # BUILD_SOURCEBRANCH
+        # SYSTEM_TEAMFOUNDATIONCOLLECTIONURI
+        # BUILD_SOURCEVERSION
+        # SYSTEM_ACCESSTOKEN
+
+        ## Dependencies
+        # git
+
+        #################### INPUT VALIDATION #####################
+        if [ ! "${BUILD_SOURCEBRANCH}" ]; then
+            echo "${vsoError}BUILD_SOURCEBRANCH IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+            exit 1
+        fi
+
+        if [ ! "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}" ]; then
+            echo "${vsoError}SYSTEM_TEAMFOUNDATIONCOLLECTIONURI IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+            exit 1
+        fi
+
+        if [ ! "${BUILD_SOURCEVERSION}" ]; then
+            echo "${vsoError}BUILD_SOURCEVERSION IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+            exit 1
+        fi
+
+        if [ ! "${BUILD_REPOSITORY_ID}" ]; then
+            echo "${vsoError}BUILD_REPOSITORY_ID IS NULL! Perhaps you are running the script not in of TFS pipeline?"
+            exit 1
+        fi
+
+        if [ ! "${SYSTEM_ACCESSTOKEN}" ]; then
+            echo "${vsoError}SYSTEM_ACCESSTOKEN IS NULL! Perhaps you forgot to turn on the appropriate flag in the pipeline?"
+            exit 1
+        fi
+
+        if [ ! "$(command -v git)" ]; then
+            echo "${vsoError}git is not found on the system! It is required for the execution!"
+        fi
+
+        releaseBranchPrototypeRE="refs\/heads\/release" # project should reserve refs/heads/release/* for use only for releases.
+        semVerRE="(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*))?"
+        describeRE="^(refs/tags/)?v${semVerRE}(\-prerelease)?\-[0-9]+\-[a-zA-Z0-9]+$"
+        validReleaseBranchRE="^${releaseBranchPrototypeRE}\/(v)?${semVerRE}$"
+
+        echo "Valid release branch pattern: $validReleaseBranchRE"
+
+        if [[ "${BUILD_SOURCEBRANCH}" =~ $validReleaseBranchRE ]]; then
+            echo "Source branch matched a release branch pattern. Script will be executed in \"release\" mode."
+            mode="release"
+        elif [[ "${BUILD_SOURCEBRANCH}" =~ $releaseBranchPrototypeRE ]]; then
+            echo "${vsoError}Incorrect release branch name! Release branch name should match \"${validReleaseBranchRE}\"!"
+            exit 1
+        else
+            echo "Source branch is not a release one. Script will be executed in \"build\" mode."
+            mode="build"
+        fi
+        ###########################################################
+
+        ################### GET TAG INFORMATION ###################
+        echo "Testing git describe..."
+        git describe --first-parent --tags --match "v*" --long || (echo "${vsoError}No tags found by git describe! Are you sure you have at least one version tag in repository?" && exit 1)
+        echo "Test finished."
+        describe=$(git describe --first-parent --tags --match "v*" --long)
+        echo "git describe: ${describe}"
+
+        if [[ ! "$describe" =~ $describeRE ]]; then
+            echo "${vsoError}The output of git describe (${describe}) is invalid! Should match \"${describeRE}\""
+        fi
+
+        # parse describe
+        fullTag=${describe%%[+-]*} #without semVer meta, but with prefixes
+        hash=${describe##*-}
+        leaf=$(echo ${describe} | sed -e "s/\(-${hash}\)*\$//g")
+        tagDistance=${leaf##*-}
+
+        # get tag version and split it
+        tVersion=${fullTag##*v}
+        tMajor=$(echo ${tVersion} | cut -d. -f1)
+        tMinor=$(echo ${tVersion} | cut -d. -f2)
+        tPatch=$(echo ${tVersion} | cut -d. -f3)
+
+        echo "tVersion      = ${tVersion}"
+        echo "tagDistance   = ${tagDistance}"
+
+        if [ ! "$tPatch" ]; then
+            tPatch="0"
+        fi
+        ###########################################################
+
+        ###################### BUILD MODE #########################
+        if [ "$mode" == "build" ]; then
+            newSemVer="${tMajor}.$((${tMinor}+1)).${tPatch}-${BUILD_SOURCEBRANCHNAME}.${tagDistance}"
+            echo "${vsoPrefix}vso[task.setvariable variable=Version]$newSemVer"
+
+            buildNumber="${newSemVer}-${BUILD_BUILDID}"
+            echo "Updating build number to ${buildNumber}..."
+            echo "${vsoPrefix}vso[build.updatebuildnumber]${buildNumber}"
+            exit 0
+        fi
+        ###########################################################
+
+        ##################### RELEASE MODE ########################
+
+        if [ "$mode" != "release" ]; then
+            echo "${vsoError}Something went wrong. Neither mode is specified. I blame bash."
+            exit 1
+        fi
+
+        # get source branch version and split it
+        sbVersion=${BUILD_SOURCEBRANCHNAME##*v}
+        sbMajor=$(echo ${sbVersion} | cut -d. -f1)
+        sbMinor=$(echo ${sbVersion} | cut -d. -f2)
+        sbPatch=$(echo ${sbVersion} | cut -d. -f3)
+
+        echo "Source branch version: ${sbVersion}. Patch will be discarded."
+        
+        # validate that version is not decremented
+        if [[ ("${tMajor}" -gt "${sbMajor}") || ("${tMajor}" -eq "${sbMajor}" && "${tMinor}" -gt "${sbMinor}") ]]; then
+            echo "${vsoError}Your new release decrements a version from ${tVersion} to ${sbVersion}. Please verify your release version number."
+            exit 1
+        fi
+
+        if [[ ("${tMajor}" -ne "${sbMajor}") || ("${tMinor}" -ne "${sbMinor}") ]]; then
+
+            #check if the tag already exists
+            echo "Need to place vMajor.Minor tag..."
+            mergeBase=$(git merge-base HEAD ${mainBranch})
+            if [ ! "$mergeBase" ]; then
+                echo "Couldn't find 'merge-base HEAD ${mainBranch}' to place the tag. Value: '${mergeBase}'"
+                exit 1
+            fi
+            echo "Merge base: $mergeBase"
+
+            newVersionTag="v${sbMajor}.${sbMinor}" 
+            echo "New version tag: $newVersionTag"
+
+            getLink="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?filter=tags/${newVersionTag}&api-version=4.1"
+            returnedTags=$(curl \
+                -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -X GET \
+            ${getLink})
+
+            echo "GET $getLink"
+            returnedTagCount="$(echo ${returnedTags} | grep -Po '"count":.*?[^\\]' | grep -Po '[0-9]+')"
+
+            if [ ${returnedTagCount} != "0" ]; then
+                echo "${vsoError}Tag \"${newVersionTag}*\" already exists. Did you accidentally create a release branch with older version?"
+                exit 1
+            fi
+
+            #post new tag
+            postLink="${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?api-version=4.1"
+            body="[
+                {
+                    \"name\": \"refs/tags/${newVersionTag}\",
+                    \"oldObjectId\": \"0000000000000000000000000000000000000000\",
+                    \"newObjectId\": \"${mergeBase}\"
+                }
+            ]"
+
+            echo "POST $postLink"
+            curl \
+                -H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -X POST \
+                -d "${body}" \
+            ${postLink}
+
+            tPatch="0"
+            tagDistance=$(git rev-list --count  --first-parent HEAD...${mergeBase})
+            echo "Tag distance to mergebase: $tagDistance"
+        fi
+
+        newSemVer="${sbMajor}.${sbMinor}.$((${tPatch}+${tagDistance}))"
+        echo "${vsoPrefix}vso[task.setvariable variable=Version]$newSemVer"
+
+        buildNumber="$newSemVer-${BUILD_BUILDID}"
+        echo "${vsoPrefix}vso[build.updatebuildnumber]${buildNumber}"
+        ###########################################################
+    displayName: 'Set build number (linux)'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    condition: and(succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+
+  - powershell: |
+      $BUILD_SOURCEBRANCH = $env:BUILD_SOURCEBRANCH
+      $SYSTEM_TEAMFOUNDATIONCOLLECTIONURI = $env:SYSTEM_TEAMFOUNDATIONCOLLECTIONURI
+      $BUILD_SOURCEVERSION = $env:BUILD_SOURCEVERSION
+      $BUILD_REPOSITORY_ID = $env:BUILD_REPOSITORY_ID
+      $SYSTEM_ACCESSTOKEN = $env:SYSTEM_ACCESSTOKEN
+      $BUILD_BUILDID = $env:BUILD_BUILDID
+      $BUILD_SOURCEBRANCHNAME = $env:BUILD_SOURCEBRANCHNAME
+      $mainBranch = "master"
+      
+      $ErrorActionPreference = "Stop"
+      $env:GIT_REDIRECT_STDERR = '2>&1'
+      $vsoPrefix = "##"
+      #$vsoWarning = "${vsoPrefix}vso[task.logissue type=warning;]"
+      $vsoError = "${vsoPrefix}vso[task.logissue type=error;]"
+      #$vsoSection = "${vsoPrefix}[section]"
+
+      #region ############ INPUT VALIDATION #####################
+      if ( -not "${BUILD_SOURCEBRANCH}") {
+          Write-Host "${vsoError}BUILD_SOURCEBRANCH IS NULL! Perhaps you are running the script not in TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}" ) {
+          Write-Host "${vsoError}SYSTEM_TEAMFOUNDATIONCOLLECTIONURI IS NULL! Perhaps you are running the script not in TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${BUILD_SOURCEVERSION}" ) {
+          Write-Host "${vsoError}BUILD_SOURCEVERSION IS NULL! Perhaps you are running the script not in TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${BUILD_REPOSITORY_ID}" ) {
+          Write-Host "${vsoError}BUILD_REPOSITORY_ID IS NULL! Perhaps you are running the script not in TFS pipeline?"
+          exit 1
+      }
+
+      if ( -not "${SYSTEM_ACCESSTOKEN}" ) {
+          Write-Host "${vsoError}SYSTEM_ACCESSTOKEN IS NULL! Perhaps you forgot to turn on the appropriate flag in the pipeline?"
+          exit 1
+      }
+
+      if ( -not $(git --version) ) {
+          Write-Host "${vsoError}git is not found on the system! It is required for the execution!"
+          exit 1
+      }
+
+      if (-not ($mainBranch -match "origin")) {
+          $mainBranch="origin/${mainBranch}"
+      }
+
+      $releaseBranchPrototypeRE = "refs\/heads\/release" # project should reserve refs/heads/release/* for use only for releases.
+      $semVerMMRE = "(0|([1-9][0-9]*))\.(0|([1-9][0-9]*))"
+      $semVerRE = "${semVerMMRE}(\.(0|([1-9][0-9]*)))?"
+      $describeRE = "^(refs/tags/)?v${semVerRE}(\-prerelease)?\-[0-9]+\-[a-zA-Z0-9]+$"
+      $validReleaseBranchRE = "^${releaseBranchPrototypeRE}\/(v)?${semVerMMRE}$"
+
+      Write-Host "Valid release branch pattern: $validReleaseBranchRE"
+
+      if ("${BUILD_SOURCEBRANCH}" -match "$validReleaseBranchRE") {
+          Write-Host "Source branch matched a release branch pattern. Script will be executed in `"release`" mode."
+          $mode = "release"
+      }
+      elseif ("${BUILD_SOURCEBRANCH}" -match "$releaseBranchPrototypeRE") {
+          Write-Host "${vsoError}Incorrect release branch name! Release branch name should match `"${validReleaseBranchRE}`"!"
+          exit 1
+      }    
+      else {
+          Write-Host "Source branch is not a release one. Script will be executed in `"build`" mode."
+          $mode = "build"
+      }
+      #endregion
+
+      #region ########### GET TAG INFORMATION ###################
+      Write-Host "Searching for closest tag with git describe..."
+
+      $describe = (. git describe --first-parent --tags --match "v*" --long)
+      if (!$describe) {
+          Write-Host "${vsoError}No tags found by git describe! Are you sure you have at least one version tag in repository?"
+          exit 1
+      }
+
+      if ($describe.count -gt 1) {
+          $describe=$describe[0]
+      }
+
+      Write-Host "git describe: ${describe}"
+
+      if ( -not ("$describe" -match $describeRE)) {
+          Write-Host "${vsoError}The output of git describe (${describe}) is invalid! Should match '${describeRE}'"
+          exit 1
+      }
+
+      # parse describe
+      $describe = $describe -replace "refs/tags/", ""
+      $fullTag = ($describe -split "-\d+-")[0]
+      $hash = ($describe -split "-\d+-")[1]
+
+      $matched = $describe -match "-\d+-"
+      if (-not $matched) {
+          Write-Host "${vsoError}Error parsing tag distance from 'git describe'! '$describe' does not contain '-\d+-' pattern!"
+          exit 1
+      }
+      $tagDistance = $matches[0]
+
+      [int]$tagDistance = $describe.Replace("$hash", "").Replace("$fullTag", "").Replace("-", "")
+
+      $matched = $describe -match "$semVerRE"
+      if (-not $matched) {
+          Write-Host "${vsoError}Error parsing version from 'git describe'! '$describe' does not contain '$semVerRE' pattern!"
+          exit 1
+      }
+
+      $tVersion = $matches[0]
+      [int]$tMajor = $tVersion.Split(".")[0]
+      [int]$tMinor = $tVersion.Split(".")[1]
+      [int]$tPatch = $tVersion.Split(".")[2]
+
+      Write-Host "Described tag   = ${fullTag}"
+      Write-Host "Tagged version  = ${tVersion}"
+      Write-Host "Tag distance    = ${tagDistance}"
+
+      if ( -not "$tPatch" ) {
+          $tPatch = 0
+      }
+      #endregion
+
+      #region ############## BUILD MODE #########################
+
+      if ( "$mode" -eq "build" ) {
+          $newSemVer="${tMajor}.$(${tMinor}+1).${tPatch}-${BUILD_SOURCEBRANCHNAME}.${tagDistance}"
+          Write-Host "${vsoPrefix}vso[task.setvariable variable=Version]$newSemVer"
+
+          $buildNumber = "$newSemVer-${BUILD_BUILDID}"
+          Write-Host "Updating build number to ${buildNumber}..."
+          Write-Host "${vsoPrefix}vso[build.updatebuildnumber]${buildNumber}"
+          exit 0
+      }
+      #endregion
+
+      #region ############# RELEASE MODE ########################
+      if ( "$mode" -ne "release" ) {
+          Write-Host "${vsoError}Something went wrong. Neither mode is speci}ed. I blame bash. Even though it's powershell."
+          exit 1
+      }
+
+      # get source branch version and split it
+      $sbVersion = ${BUILD_SOURCEBRANCHNAME} -Replace "^v", ""
+      [int]$sbMajor = ${sbVersion}.Split(".")[0]
+      [int]$sbMinor = ${sbVersion}.Split(".")[1]
+      #[int]$sbPatch = ${sbVersion}.Split(".")[2]
+
+      Write-Host "Source branch version: ${sbVersion}. Patch will be discarded."
+
+      if ( ("${tMajor}" -gt "${sbMajor}") -or ("${tMajor}" -eq "${sbMajor}" -and "${tMinor}" -gt "${sbMinor}") ) {
+          Write-Host "${vsoError}Your new release decrements a version from ${tVersion} to ${sbVersion}. Please verify your release version number."
+          exit 1
+      }
+
+      if (("${tMajor}" -ne "${sbMajor}") -or ("${tMinor}" -ne "${sbMinor}")) {
+          #check if the tag already exists
+          $newVersionTag = "v${sbMajor}.${sbMinor}"
+          Write-host "New version tag: $newVersionTag"
+          
+          $mergeBase = (. git merge-base HEAD ${mainBranch})
+          if (-not $mergeBase) {
+              Write-host "Couldn't find 'merge-base HEAD ${mainBranch}' to place the tag. Value: $mergeBase"
+              exit 1
+          }
+
+          $headers = @{
+              "Authorization" = "Bearer ${SYSTEM_ACCESSTOKEN}"
+              "Accept"        = "application/json"
+          }
+          
+          $getLink = "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?filter=tags/${newVersionTag}&api-version=4.1"
+
+          Write-Host "GET $getLInk"
+          $returnedTags = Invoke-RestMethod ${getLink} -Headers $headers -Method Get
+
+          Write-host $returnedTags
+
+          if ( $returnedTags.count -ne "0" ) {
+              Write-Host "${vsoError}Tag '${newVersionTag}*' already exists. Did you accidentally create a release branch with older version?"
+              exit 1
+          }
+
+          #post new tag
+          $postLink = "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/refs?api-version=4.1"
+          $body = @"
+          [
+              {
+                  "name": "refs/tags/${newVersionTag}",
+                  "oldObjectId": "0000000000000000000000000000000000000000",
+                  "newObjectId": "${mergeBase}"
+              }
+          ]
+      "@
+          Write-host $body
+          Write-Host "POST $postLink"
+          Invoke-RestMethod $postLink -Headers $headers -ContentType "application/json" -Method POST -Body $body
+          Write-host "Tag '${newVersionTag}' posted successfully!"
+
+          [int]$tPatch=0
+          [int]$tagDistance = (. git rev-list --count  --first-parent HEAD...${mergeBase})
+          Write-host "Tag distance to mergebase: $tagDistance"
+      }
+
+      $newSemVer="${sbMajor}.${sbMinor}.$(${tPatch}+${tagDistance})"
+      Write-Host "${vsoPrefix}vso[task.setvariable variable=Version]$newSemVer"
+
+      $buildNumber = "${newSemVer}-${BUILD_BUILDID}"
+      Write-Host "${vsoPrefix}vso[build.updatebuildnumber]${buildNumber}"
+      Write-Host "Build number updated successfully."
+
+      #endregion
+    displayName: 'Set build number (win)'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))

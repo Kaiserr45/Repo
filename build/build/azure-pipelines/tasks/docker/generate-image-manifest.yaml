@@ -1,0 +1,46 @@
+parameters:
+  ManifestFullName: ''
+  ImageName: ''
+
+steps:
+  #: 'Генерирует текстовый файл imagemanifest.json для публикации, который содержит полное имя образа с версией'
+  - script: |
+      #!/bin/bash
+
+      set -e
+      vsoPrefix="##"
+      vsoWarning="${vsoPrefix}vso[task.logissue type=warning;]"
+      vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+      vsoSection="${vsoPrefix}[section]"
+      
+      usage()
+      {
+          echo "${vsoError} script parameter error! Check keys and syntax!
+          $0  -o \"\$(Artifact.StagingDirectory)/imageManifest.json\" 
+              -im \"\$(imageName)\""
+      }
+      
+      #################### READ PARAMETERS #####################
+      manifestFullName="${{ parameters.ManifestFullName }}"
+      imageName="${{ parameters.ImageName }}"
+      ###########################################################
+      
+      #################### INPUT VALIDATION #####################
+      if [ ! "${manifestFullName}" ]; then
+          echo "${vsoError}manifestFullName IS NULL! No value specified in -o parameter?"
+          exit 1
+      fi
+      
+      if [ ! "${imageName}" ]; then
+          echo "${vsoError}imageName IS NULL! No value specified in -im parameter?"
+          exit 1
+      fi
+      
+      if [ ! "${ORG_OPENCONTAINERS_IMAGE_VERSION}" ]; then
+          echo "${vsoError}ORG_OPENCONTAINERS_IMAGE_VERSION IS NULL! Perhaps you did not run buid-init.sh first?"
+          exit 1
+      fi
+      ###########################################################
+      
+      echo "${IMAGENAME}:${ORG_OPENCONTAINERS_IMAGE_VERSION}" > ${manifestFullName}
+    displayName: 'Generate image manifest'

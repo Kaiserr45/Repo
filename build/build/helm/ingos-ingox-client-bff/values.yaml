@@ -1,0 +1,126 @@
+# Default values for example-app.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+###########################################################
+#                     important stuff                     #
+###########################################################
+
+
+# Значения для переменных среды в контейнере, где
+# app.env.%name% будет использоваться как имя переменной,
+# а значение app.env.%name% будет подставленно в том виде, в котором оно определено
+# Пример: app.env.MyVariable.value: "MyValue" будет трансформирован в:
+# - name: MyVariable
+#   value: MyValue
+app:
+  env:
+    ASPNETCORE_ENVIRONMENT: Test
+    IngosApplication__InstanceId:
+      valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+
+  image:
+    # Репозиторий вашего образа (полное имя без тэга)
+    repository: ingox-docker-local.artifactory.corp.ingos.ru/ingos-ingox-client-bff
+    pullPolicy: IfNotPresent
+    tag: "" # Overrides the image tag whose default is the chart appVersion.
+
+  imageCredentials:
+    username: ""
+    password: ""
+
+  # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+  resources:
+    # Предел по ресурсам, когда кластер поймет, что приложение работает некорректно.
+    limits:
+      cpu: 150m
+      memory: 250Mi
+    # Количество ресурсов, запрашиваемое у кластера вашим приложением для каждого контейнера.
+    requests:
+      cpu: 60m
+      memory: 100Mi
+
+# https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
+autoscaling:
+  enabled: true # если не можете использовать hpa, то необходимо установить replicaCount ниже
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 85 # сравнивается общее текущее потребление относительно resquests.cpu
+  targetMemoryUtilizationPercentage: 75 # сравнивается общее текущее потребление относительно resquests.memory
+
+# https://kubernetes.io/docs/concepts/services-networking/ingress/
+ingress:
+  enabled: true
+  # rewrite-target annotation is used to cut the url prefix when the request is passed to your application by ingress controller
+  # docs: https://github.com/kubernetes/ingress-nginx/blob/master/docs/examples/rewrite/README.md
+  # in this example url: `example.ingos.ru/api/example/base/v1/controller` will be passed to your app as `example.ingos.ru/controller`
+  annotations:
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "balanced"
+    nginx.ingress.kubernetes.io/session-cookie-name: "INSTANCE"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: '10800'
+    # nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+    # nginx.ingress.kubernetes.io/use-regex: "true"
+  hosts:
+    - host: test-int-gate.ingos.ru
+      paths: 
+        - path: /api/ingox-client-bff/v1
+          backend:
+            servicePort: '9001'
+  # Example of path to be used with url-rewrite
+  # path: /api/example/base/v1(/|$)(.*)
+
+
+###########################################################
+#                         misc                            #
+###########################################################
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Задавайте, если не хотите использовать autoscaler по какой-то неведомой причине.
+replicaCount: 1 # ignored if autoscaling is enabled
+
+imagePullSecrets: []
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+# https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+securityContext:
+  capabilities:
+    drop: [ "ALL" ]
+  readOnlyRootFilesystem: true
+  privileged: false
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+
+# https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      targetPort: 9001
+      port: 9001
+      nodePort: "" #keep empty for .Values.service.type == ClusterIP
+      protocol: TCP 
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+secrets:
+    secretId: ""
+    roleId: ""
+
+podDisruptionBudget:
+  enabled: true

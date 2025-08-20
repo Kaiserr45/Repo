@@ -1,0 +1,77 @@
+# Параметры, которые шаблон может принять на вход и их значения по-умолчанию.
+# Значения подставляются через синтаксис "${{ parameters.ParameterName }}".
+# Процесс подстановки проходит ДО запуска билда и инициализии рантайм переменных.
+parameters:
+    DockefilePath: ''
+    AppsettingsPath: ''
+    ArtifactoryProjectRepository: ''
+    ImageName: ''
+    Token: '$(System.AccessToken)'
+    PreBuildScript: './tfs/scripts/prebuild.sh'
+    PostBuildScript: './tfs/scripts/postbuild.sh'
+
+# Шаги, которые будут подключены в вызвавший этот шаблон pipeline.
+steps:
+
+  #: 'Предустановка Artifactory CLI'
+  - task: JFrog.jfrog-azure-devops-extension.jfrog-tools-installer-task.JFrogToolsInstaller@1
+    displayName: 'JFrog Tools Installer'
+    inputs:
+      artifactoryConnection: 'JFrog Artifactory V2'
+      cliInstallationRepo: 'jfrog-cli/v2-jf/'
+    continueOnError: true
+
+  - template: tasks/versioning/set-build-version.yaml
+
+  - template: tasks/docker/build-init.yaml
+    parameters:
+      AppsettingsPath: '${{ parameters.AppsettingsPath }}'
+    
+  #- template: tasks/docker/validate-pipeline-vars.yaml
+
+  - template: tasks/docker/docker-build.yaml
+    parameters:
+      PostBuildScript: '${{ parameters.PostBuildScript }}'
+      PreBuildScript: '${{ parameters.PreBuildScript }}'
+      DockefilePath: '${{ parameters.DockefilePath }}'
+      Arguments: '--build-arg Version=$(Build.BuildNumber)'
+  
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFormat: VSTest
+      testResultsFiles: '$(Common.TestResultsDirectory)/*.trx'
+      failTaskOnFailedTests: true  
+    condition: always()
+
+  #: 'Публикация образа в artifactory'
+  - task: JFrog.jfrog-azure-devops-extension.jfrog-docker-task.JFrogDocker@1
+    displayName: 'JFrog Docker Push'
+    inputs:
+      command: Push
+      artifactoryConnection: 'JFrog_RW'
+      imageName: '${{ parameters.ImageName }}:$(ORG_OPENCONTAINERS_IMAGE_VERSION)'
+      collectBuildInfo: true
+      includeEnvVars: true
+
+  #: 'Публикация в Artifactory метаданных о сборке'
+  - task: JFrog.jfrog-azure-devops-extension.jfrog-publish-build-info.JFrogPublishBuildInfo@1
+    displayName: 'JFrog Publish Build Info'
+    inputs:
+      artifactoryConnection: 'JFrog_RW'
+      buildName: '$(System.TeamProject)_$(Build.Repository.Name)'
+
+  - template: tasks/docker/generate-image-manifest.yaml
+    parameters:
+      ManifestFullName: '$(Build.ArtifactStagingDirectory)/imageManifest.json'
+      ImageName: '${{ parameters.ImageName }}'
+
+#  - task: PublishBuildArtifacts@1
+#    displayName: 'Publish Artifact: $(Build.BuildNumber)'
+#    inputs:
+#      PathtoPublish: '$(Build.ArtifactStagingDirectory)/'
+#      ArtifactName: '$(Build.BuildNumber)'
+
+#  - template: tasks/docker/clean-after-build.yaml
+#    parameters:
+#      ImageName: '${{ parameters.ImageName }}'

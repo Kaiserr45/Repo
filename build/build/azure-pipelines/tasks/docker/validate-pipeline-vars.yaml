@@ -1,0 +1,6 @@
+steps:
+  #: 'Скрипт по запуску сборки образа'
+  - task: Bash@3
+    inputs:
+      filePath: '$(Build.SourcesDirectory)/build/scripts/validate-pipeline-vars.sh'
+    displayName: 'Validate label environment variables'

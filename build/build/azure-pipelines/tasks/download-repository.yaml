@@ -1,0 +1,44 @@
+parameters:
+    SourceRepoURI: ''
+    RepoDownloadPath: ''
+    Token: '$(System.AccessToken)'
+    Branch: 'master'
+    Depth: 1
+
+steps:
+  - script: |
+      #########################################################
+      # IMPORTANT: specify link to your build scrips TFS repo!
+      #########################################################
+      sourceRepoUri="${{ parameters.SourceRepoURI }}"
+      RepoDownloadPath="${{ parameters.RepoDownloadPath }}"
+
+      vsoPrefix="##"
+      vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+
+      if [ ! $sourceRepoUri ]; then
+          echo "${vsoError}sourceRepoUri is NULL! You must specify the location of forked repo with scripts!"
+          exit 1
+      fi
+
+      mkdir "$RepoDownloadPath"
+      cd "$RepoDownloadPath"
+      git init \
+          && echo "Initialized repository."
+          
+      git -c http.extraheader="AUTHORIZATION: bearer ${{ parameters.Token }}" remote add origin $sourceRepoUri \
+          && echo "Added remote $sourceRepoUri"
+
+      if [ ! ${{ parameters.Depth }} ]; then
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ parameters.Token }}" fetch origin ${{ parameters.Branch }} \
+              && echo "Fetched origin/${{ parameters.Branch }}."
+      else 
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ parameters.Token }}" fetch origin ${{ parameters.Branch }} --depth=${{ parameters.Depth }} \
+              && echo "Fetched origin/${{ parameters.Branch }} with depth ${{ parameters.Depth }}."
+      fi
+      
+      git checkout origin/${{ parameters.Branch }} \
+          && echo "Checked out origin/${{ parameters.Branch }}."
+    displayName: 'Download repository'
+    env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)

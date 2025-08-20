@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<ProjectGuid>4eaf19a4-9d41-4de3-bc2f-d5449032fc8b</ProjectGuid>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <Compile Remove="bin\**" />
+	  <Compile Remove="obj\**" />
+	  <EmbeddedResource Remove="bin\**" />
+	  <EmbeddedResource Remove="obj\**" />
+	  <None Remove="bin\**" />
+	  <None Remove="obj\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="Ingos.Platform.Core" Version="6.3.0" />
+	  <PackageReference Include="Ingos.Platform.Logging.Serilog" Version="6.12.0" />
+	  <PackageReference Include="Refit" Version="8.0.0" />
+	</ItemGroup>
+</Project>

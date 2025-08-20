@@ -1,0 +1,13 @@
+parameters:
+  DockefilePath: '$(DockefilePath)'
+  PreBuildScript: './tfs/scripts/prebuild.sh'
+  PostBuildScript: './tfs/scripts/postbuild.sh'
+  Arguments: ''
+
+steps:
+  #: 'Скрипт по запуску сборки образа'
+  - task: Bash@3
+    inputs:
+      filePath: '$(Build.SourcesDirectory)/build/scripts/build.sh'
+      arguments: '-f "${{ parameters.DockefilePath }}" --prebuild ${{ parameters.PreBuildScript }} --postbuild ${{ parameters.PostBuildScript }} -args "${{ parameters.Arguments }}"'
+    displayName: 'Build an image'

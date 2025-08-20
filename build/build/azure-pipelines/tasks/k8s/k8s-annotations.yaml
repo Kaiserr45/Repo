@@ -1,0 +1,110 @@
+parameters:
+  AppSettingsPath: ''
+  chartPath: ''
+
+steps:
+  #: 'Считывает метаданные для аннотаций деплоя из файла appsettings.json и публикует их в переменных'
+  - script: |
+      #!/bin/bash
+
+      set -e
+      vsoPrefix="##"
+      vsoWarning="${vsoPrefix}vso[task.logissue type=warning;]"
+      vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+      vsoSection="${vsoPrefix}[section]"
+      
+      usage()
+      {
+          echo "${vsoError} script parameter error! Check keys and syntax!
+          $0 -ap \"$(Build.SourcesDirectory)/myCoolApp/appsettings.json\""
+      }
+      
+      #################### READ PARAMETERS #####################
+      AppSettingsPath="${{ parameters.AppSettingsPath }}"
+      ###########################################################
+      
+      #################### INPUT VALIDATION #####################
+      if [ ! "$AppSettingsPath" ]; then
+          echo "${vsoError}AppSettingsPath IS NULL! Perhaps you did not specify AppSettingsPath parameter?"
+          exit 1
+      fi
+      
+      if [ ! -f $AppSettingsPath ]; then
+          AppSettingsPath="${AppSettingsPath}/appsettings.json"
+
+          if [ ! -f $AppSettingsPath ]; then
+            echo "${vsoError}${AppSettingsPath} not found!"
+            echo "${vsoError}Every application MUST contain a file with metadata. Please provide the correct path."
+            exit 1
+          fi
+      fi
+      
+      if [ ! "$BUILD_SOURCEVERSION" ]; then
+          echo "${vsoError}BUILD_SOURCEVERSION IS NULL! Perhaps you are running the script out of TFS pipeline?"
+          exit 1
+      fi
+      
+      if [ ! "$BUILD_REPOSITORY_URI" ]; then
+          echo "${vsoError}BUILD_REPOSITORY_URI IS NULL! Perhaps you are running the script out of TFS pipeline?"
+          exit 1
+      fi
+      ###########################################################
+      
+      ################ READING appsettings.json #################
+      
+      revision="${BUILD_SOURCEVERSION}"
+      description=$(cat $AppSettingsPath | sed -n 's|.*"Description":[[:space:]]*"\([^"]*\)".*|\1|pI')
+      title=$(cat $AppSettingsPath | sed -n 's|.*"Title":[[:space:]]*"\([^"]*\)".*|\1|pI')
+      businessOwnerSAM=$(cat $AppSettingsPath | sed -n 's|.*"BusinessOwnerSAM":[[:space:]]*"\([^"]*\)".*|\1|pI')
+      erp=$(cat $AppSettingsPath | sed -n 's|.*"ERP":[[:space:]]*"\([^"]*\)".*|\1|pI')
+      projectOwnerSAM=$(cat $AppSettingsPath | sed -n 's|.*"ProjectOwnerSAM":[[:space:]]*"\([^"]*\)".*|\1|pI')
+      created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+      ###########################################################
+
+      ############## POPULATING PIPELINE VARIABLES ##############
+      echo "${vsoPrefix}vso[task.setvariable variable=k8s_annotation_created;]$created"
+      echo "${vsoPrefix}vso[task.setvariable variable=k8s_annotation_revision;]$revision"
+      echo "${vsoPrefix}vso[task.setvariable variable=k8s_annotation_title;]$title"
+      echo "${vsoPrefix}vso[task.setvariable variable=k8s_annotation_description;]$description"
+      echo "${vsoPrefix}vso[task.setvariable variable=k8s_annotation_businessOwnerSAM;]$businessOwnerSAM"
+      echo "${vsoPrefix}vso[task.setvariable variable=k8s_annotation_projectOwnerSAM;]$projectOwnerSAM"
+      echo "${vsoPrefix}vso[task.setvariable variable=k8s_annotation_erp;]$erp"
+      ###########################################################
+    displayName: 'Read metadata for chart'
+
+  - script: |
+      #!/bin/bash
+
+      set -e
+      vsoPrefix="##"
+      vsoWarning="${vsoPrefix}vso[task.logissue type=warning;]"
+      vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+      vsoSection="${vsoPrefix}[section]"
+
+      ############# VALIDATION OF REQUIRED VARIABLES ############
+      if [ ! "${K8S_ANNOTATION_BUSINESSOWNERSAM}" ]; then
+          echo "${vsoError}BusinessOwnerSAM IS NULL! Please provide the correct value in appsettings.json"
+          exit 1
+      fi
+
+      if [ ! "${K8S_ANNOTATION_PROJECTOWNERSAM}" ]; then
+          echo "${vsoError}ProjectOwnerSAM IS NULL! Please provide the correct value in appsettings.json"
+          exit 1
+      fi
+
+      if [ ! "${K8S_ANNOTATION_ERP}" ]; then
+          echo "${vsoError}ERP IS NULL! Please provide "true" or "false" in appsettings.json if your application is included in ERP or not"
+          exit 1
+      fi
+      ###########################################################
+
+      chartPath="${{ parameters.chartPath }}"
+
+      ############# UPDATING DEPLOYMENT ANNOTATIONS #############
+      sed -i "s~BusinessOwnerSAM: \"\"~BusinessOwnerSAM: \"${K8S_ANNOTATION_BUSINESSOWNERSAM}\"~" $chartPath/values.yaml
+      sed -i "s~GitRepositoryUrl: \"\"~GitRepositoryUrl: \"${BUILD_REPOSITORY_URI}\"~" $chartPath/values.yaml
+      sed -i "s~ProjectOwnerSAM: \"\"~ProjectOwnerSAM: \"${K8S_ANNOTATION_PROJECTOWNERSAM}\"~" $chartPath/values.yaml
+      sed -i "s~ERP: \"\"~ERP: \"${K8S_ANNOTATION_ERP}\"~" $chartPath/values.yaml
+      ###########################################################
+    displayName: 'Replace annotations for chart'

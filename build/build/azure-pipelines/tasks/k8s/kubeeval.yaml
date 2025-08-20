@@ -1,0 +1,5 @@
+steps:
+- script: |
+      set -e
+      helm template ${{ parameters.ChartDirectory }} | kubeval --strict --schema-location https://artifactory.corp.ingos.ru/artifactory/kubernetesjsonschema-remote/ --ignore-missing-schemas
+    displayName: 'Kubeval'

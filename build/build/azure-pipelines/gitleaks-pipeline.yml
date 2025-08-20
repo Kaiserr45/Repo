@@ -1,0 +1,12 @@
+name: "DevSecOps аудит"
+# Continious integration отключен
+trigger: none
+
+resources:
+  repositories:
+  - repository: Ingos.DAIZI.Gitleaks-PR
+    type: git
+    name: DAIZI/Ingos.DAIZI.Gitleaks-PR
+stages:
+# Берем конвейер с названием pipeline.yml https://tfs.corp.ingos.ru/tfs/Ingos/DAIZI/_git/Ingos.DAIZI.Gitleaks-PR?path=%2Fpipeline.yml&version=GBmaster
+- template: pipeline_stages.yml@Ingos.DAIZI.Gitleaks-PR

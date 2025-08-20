@@ -1,0 +1,124 @@
+# Параметры, которые шаблон может принять на вход и их значения по-умолчанию.
+# Значения подставляются через синтаксис "${{ parameters.ParameterName }}".
+# Процесс подстановки проходит ДО запуска билда и инициализии рантайм переменных.
+parameters:
+    DockefilePath: ''
+    AppsettingsPath: ''
+    ArtifactoryProjectRepository: ''
+    ImageName: ''
+    Token: '$(System.AccessToken)'
+    PreBuildScript: '$(Build.SourcesDirectory)/build/scripts/prebuild.sh'
+    PostBuildScript: '$(Build.SourcesDirectory)/build/scripts/postbuild.sh'
+    ChartPath: "$(ChartPath)"
+    ChartOverridesDirectory: "$(ChartOverridesDirectory)"
+
+
+
+# Шаги, которые будут подключены в вызвавший этот шаблон pipeline.
+steps:
+
+  #: 'Предустановка Artifactory CLI'
+  - task: JFrog.jfrog-azure-devops-extension.jfrog-tools-installer-task.JFrogToolsInstaller@1
+    displayName: 'JFrog Tools Installer'
+    inputs:
+      artifactoryConnection: 'JFrog Artifactory V2'
+      cliInstallationRepo: 'jfrog-cli/v2-jf/'
+    continueOnError: true
+
+  - template: tasks/versioning/set-build-version.yaml
+
+  - template: tasks/docker/build-init.yaml
+    parameters:
+      AppsettingsPath: '${{ parameters.AppsettingsPath }}'
+    
+  #- template: tasks/docker/validate-pipeline-vars.yaml
+
+  - template: tasks/docker/docker-build.yaml
+    parameters:
+      PostBuildScript: '${{ parameters.PostBuildScript }}'
+      PreBuildScript: '${{ parameters.PreBuildScript }}'
+      DockefilePath: '${{ parameters.DockefilePath }}'
+      Arguments: '--build-arg Version=$(Build.BuildNumber)'
+  
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFormat: VSTest
+      testResultsFiles: '$(Common.TestResultsDirectory)/*.trx'
+      failTaskOnFailedTests: true  
+    condition: always()
+  
+  - task: HelmDeploy@0
+    displayName: 'Create helm package'
+    inputs:
+      connectionType: None
+      command: package
+      chartPath: '${{ parameters.ChartPath }}'
+      chartVersion: '$(ORG_OPENCONTAINERS_IMAGE_VERSION)'
+      save: false
+      arguments: '--app-version $(ORG_OPENCONTAINERS_IMAGE_VERSION)'
+
+  #: 'Добавляем файлы оверрайдов для публикации вместе с чартом'
+  - task: CopyFiles@2
+    displayName: 'Copy value overrides to publish folder from the folder canary'
+    inputs:
+      SourceFolder: '${{ parameters.ChartOverridesDirectory }}'
+      Contents: '*.yaml'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+  #: 'Публикация образа в artifactory'
+  - task: JFrog.jfrog-azure-devops-extension.jfrog-docker-task.JFrogDocker@1
+    displayName: 'JFrog Docker Push'
+    inputs:
+      command: Push
+      artifactoryConnection: 'JFrog_RW'
+      imageName: '${{ parameters.ImageName }}:$(ORG_OPENCONTAINERS_IMAGE_VERSION)'
+      collectBuildInfo: true
+      includeEnvVars: true
+
+  #: 'Публикация в Artifactory метаданных о сборке'
+  - task: JFrog.jfrog-azure-devops-extension.jfrog-publish-build-info.JFrogPublishBuildInfo@1
+    displayName: 'JFrog Publish Build Info'
+    inputs:
+      artifactoryConnection: 'JFrog_RW'
+      buildName: '$(System.TeamProject)_$(Build.Repository.Name)'
+
+  - template: tasks/docker/generate-image-manifest.yaml
+    parameters:
+      ManifestFullName: '$(Build.ArtifactStagingDirectory)/imageManifest.json'
+      ImageName: '${{ parameters.ImageName }}'
+
+# Пауза, для того чтобы загруженный билд успел проиндексироваться в Xray и защиты от ошибки: Build doesn't exist or not indexed in Xray
+  - task: Bash@3
+    displayName: 'Пауза 15 сек. перед сканированием Xray'
+    inputs:
+      targetType: inline
+      script: sleep 15
+    continueOnError: true
+
+ # Анализ уязвимостей при помощи Xray
+  - task: JFrog.jfrog-azure-devops-extension.jfrog-cli-v2.JfrogCliV2@1
+    displayName: 'Xray: анализ уязвимостей'
+    inputs:
+      # имя Service Connection к Artifactory Platform
+      jfrogPlatformConnection: 'JFrog Platform V2'
+      # запуск build scan с --extended-table=true (расширенной таблицей уязвимостей)
+      command: 'jf bs "$(System.TeamProject)_$(Build.Repository.Name)" "$(Build.BuildNumber)" --vuln=true --fail=false --extended-table=true'
+    continueOnError: true
+
+  #: 'Публикация чарта в TFS'
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact: $(Build.BuildNumber)'    
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)/'
+      ArtifactName: '$(Build.BuildNumber)'
+
+#  - task: PublishBuildArtifacts@1
+#    displayName: 'Publish Artifact: $(Build.BuildNumber)'
+#    inputs:
+#      PathtoPublish: '$(Build.ArtifactStagingDirectory)/'
+#      ArtifactName: '$(Build.BuildNumber)'
+
+#  - template: tasks/docker/clean-after-build.yaml
+#    parameters:
+#      ImageName: '${{ parameters.ImageName }}'

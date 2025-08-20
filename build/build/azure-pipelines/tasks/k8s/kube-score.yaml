@@ -1,0 +1,8 @@
+steps:
+- script: |
+      set -e
+      helm template ${{ parameters.ChartDirectory }} > $(Agent.TempDirectory)/$(Build.BuildID).yaml
+      kube-score score $(Agent.TempDirectory)/$(Build.BuildID).yaml --ignore-test container-security-context,pod-networkpolicy
+    displayName: 'Kube-score'
+    failOnStderr: true
+    enabled: true

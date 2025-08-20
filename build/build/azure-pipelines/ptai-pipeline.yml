@@ -1,0 +1,13 @@
+name: "SAST - Поиск уязвимостей"
+# Continious integration отключен
+trigger: none
+
+resources:
+  repositories:
+  - repository: ptai
+    type: git
+    name: DevOps/PTAI
+
+jobs:
+# Берем конвейер с названием pipeline.yml из репозитория https://tfs.corp.ingos.ru/tfs/Ingos/DevOps/_git/PTAI проекта https://tfs.corp.ingos.ru/tfs/Ingos/DevOps
+- template: pipeline.yml@ptai

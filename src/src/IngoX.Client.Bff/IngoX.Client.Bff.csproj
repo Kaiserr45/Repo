@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
+		<ProjectGuid>3ca86096-e235-49fb-ae8e-0b81a55e39b9</ProjectGuid>
+		<UserSecretsId>50d63fbd-ccf6-438d-9e08-f071f1f0c246</UserSecretsId>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+		<DocumentationFile>bin\Release\IngoX.Client.Bff.xml</DocumentationFile>
+		<OutputPath>bin\Release\</OutputPath>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+		<DocumentationFile>bin\Debug\IngoX.Client.Bff.xml</DocumentationFile>
+		<OutputPath>bin\Debug\</OutputPath>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\IngoX.Client.Bff.Config\IngoX.Client.Bff.Config.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Maps\" />
+	  <Folder Include="Models\Mappers\" />
+	  <Folder Include="Services\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="Ingos.Platform.Security.VaultConfig" Version="6.0.0" />
+	  <PackageReference Include="Refit" Version="8.0.0" />
+	  <PackageReference Include="Refit.HttpClientFactory" Version="8.0.0" />
+	</ItemGroup>
+
+	<ProjectExtensions>
+		<VisualStudio>
+			<UserProperties appsettings_1json__JsonSchema="" />
+		</VisualStudio>
+	</ProjectExtensions>
+
+</Project>

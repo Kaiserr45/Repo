@@ -1,0 +1,80 @@
+parameters:
+  ImageName: ''
+  Version: ''
+  VerifyLabels: ''
+
+steps:
+  #: 'Описание'
+  - script: |
+      #!/bin/bash
+      
+      set -e
+      vsoPrefix="##"
+      vsoWarning="${vsoPrefix}vso[task.logissue type=warning;]"
+      vsoError="${vsoPrefix}vso[task.logissue type=error;]"
+      vsoSection="${vsoPrefix}[section]"
+      
+      #################### READ PARAMETERS #####################
+      imageName="${{ parameters.ImageName }}"
+      version="${{ parameters.Version }}"
+      verifyLabels="${{ parameters.VerifyLabels }}"
+      ###########################################################
+
+      #################### INPUT VALIDATION #####################
+      if [ ! "${imageName}" ]; then
+          echo "${vsoError}imageName IS NULL! No value specified in -im parameter?"
+          exit 1
+      fi
+
+      if [ ! "${version}" ]; then
+          echo "${vsoError}version IS NULL! No value specified in -v parameter?"
+          exit 1
+      fi
+
+      if [ ! "${verifyLabels}" ]; then
+          echo "${vsoWarning}No labels to verify was passed! Default list will be used."
+          
+          labelsToVerify="org.opencontainers.image.created;org.opencontainers.image.authors;org.opencontainers.image.documentation;org.opencontainers.image.source;org.opencontainers.image.version;org.opencontainers.image.revision;org.opencontainers.image.vendor;org.opencontainers.image.title;org.opencontainers.image.description;ru.ingos.image.businessowners;ru.ingos.image.service.group;ru.ingos.image.service.type;ru.ingos.image.service.alias;ru.ingos.image.api.version;ru.ingos.image.path.prefix;ru.ingos.image.path.base"
+      fi
+      ###########################################################
+      
+      
+      #################### Validate Labels ######################
+      verifyLabels=($(echo $labelsToVerify | tr ";" "\n"))
+      actualLabels=($($(docker inspect --format='{{range $k,$v:=.Config.Labels}}{{$k}}:{{$v}}##{{end}}' ${imageName}:${version}) | tr "##" "\n"))
+
+      missedLabels=0
+      
+      # for each label that needs to be verified browse through actual labels for matches and check it's value.
+      for label in ${verifyLabels[@]}
+      do
+      foundFlag=0
+        
+        for actualLabel in ${actualLabels[@]}
+        do
+          actualLabel=($(echo $actualLabel | tr ":" "\n"))
+
+          if [ "${actualLabel[0]}" = "$label" ]; then
+            foundFlag=1
+            if [ ! "${actualLabel[1]}" ]; then
+              echo "${vsoError}Label $label is empty!"
+              missedLabels=$(($missedLabels+1))
+            fi
+          fi
+        done
+
+        if [ $foundFlag = 0 ]; then
+          echo "${vsoError}Label $label not found!"
+          missedLabels=$(($missedLabels+1))
+        fi
+      done
+
+      if [ $missedLabels != 0 ]; then
+        echo "${vsoError}Label validation failed! See the output above."
+        exit 1
+      fi
+
+      echo "All labels found!"
+      ###########################################################
+    displayName: 'Validate built labels'
+    condition: always()

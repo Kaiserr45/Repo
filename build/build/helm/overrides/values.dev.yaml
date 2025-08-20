@@ -1,0 +1,18 @@
+autoscaling:
+  enabled: false
+
+app:
+  env:
+    ASPNETCORE_ENVIRONMENT:
+      value: "Dev"
+
+  # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+  resources:
+    # Предел по ресурсам, когда кластер поймет, что приложение работает некорректно.
+    limits:
+      cpu: 150m
+      memory: 250Mi
+    # Количество ресурсов, запрашиваемое у кластера вашим приложением для каждого контейнера.
+    requests:
+      cpu: 60m
+      memory: 100Mi

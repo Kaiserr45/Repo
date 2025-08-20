@@ -1,0 +1,37 @@
+autoscaling:
+  enabled: false # если не можете использовать hpa, то необходимо установить replicaCount ниже
+  minReplicas: 2 # Важно! При использовании PDB - должно быть не меньше 2.
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 85 # сравнивается общее текущее потребление относительно resquests.cpu
+  targetMemoryUtilizationPercentage: 75 # сравнивается общее текущее потребление относительно resquests.memory
+replicaCount: 2
+app:
+  env:
+    ASPNETCORE_ENVIRONMENT: Test
+
+  resources:
+    # Предел по ресурсам, когда кластер поймет, что приложение работает некорректно.
+    limits:
+      cpu: 150m
+      memory: 250Mi
+    # Количество ресурсов, запрашиваемое у кластера вашим приложением для каждого контейнера.
+    requests:
+      cpu: 60m
+      memory: 100Mi
+
+ingress:
+  enabled: true
+  annotations:
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "balanced"
+    nginx.ingress.kubernetes.io/session-cookie-name: "INSTANCE"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: '10800'
+  className: nginx-public
+  tls:
+     - hosts:
+        - test-int-gate.corp.ingos.ru
+  hosts:
+    - host: test-int-gate.corp.ingos.ru
+      paths:
+        - path: "/api/ingox-client-bff/v1"
+          port: 9001
